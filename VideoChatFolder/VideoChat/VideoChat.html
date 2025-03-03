@@ -1,0 +1,164 @@
+{% load otree %}
+{{ block title }}
+    Video Chat
+{{ endblock }}
+
+{{ block content }}
+<p>
+    This page will provide a video chat with recordable audio levels.
+</p>
+
+
+<br />
+
+<script src="https://unpkg.com/@vonage/client-sdk-video@2/dist/js/opentok.js "></script>
+
+
+<table class="table" style="background-color:lightgrey">
+    <tr>
+        <td style="text-align:center"><b>VIDEO CHAT</b></td>
+    </tr>
+</table>
+<div class="col-12 row justify-content-center" id="streamsContainer">
+    <div class="col-2 p-1"><div id="publishers" ></div></div>
+</div>
+<br/>
+
+
+    {{ next_button }}
+
+
+<script>
+
+// Connecting to vonage
+
+// credentials
+
+
+
+var appID = "{{ vonage_app_id }}";
+var sessionId = "{{ vonage_session_id }}";
+var token = "{{ vonage_token }}";
+var streams = [];
+
+// connect to session
+
+var session = OT.initSession(appID, sessionId);
+
+
+// create publisher
+console.log('tokentype', typeof token)
+var publisherOptions = {
+  width: '100%',
+    name: "{{user_name}}",
+    fitMode: "cover",
+    style: { nameDisplayMode: "on" }
+};
+var publisher = OT.initPublisher("publishers", publisherOptions);
+session.connect(token, function(err) {
+  session.publish(publisher);
+});
+
+
+// Subscribe to video streams of others
+
+session.on('streamCreated', function(event) {
+   console.log("Stream created:", event.stream.streamId);
+   var subscriberOptions = {  width: '100%', style: { nameDisplayMode: "on" }};
+   var div = document.createElement('div');
+   div.classList.add('col-2');
+   div.classList.add('p-1');
+   var video = document.createElement('div');
+   video.setAttribute('id', 'stream' + event.stream.streamId);
+   var streamsContainer = document.getElementById('streamsContainer');
+   streamsContainer.appendChild(div);
+   div.append(video);
+   session.subscribe(event.stream, video,subscriberOptions);
+   streams = event.streams;
+});
+
+
+// Remove empty streams after someone left
+
+function delete_empty_containers() {
+  allContainers = $('#streamsContainer > div');
+    $.each(allContainers,function(index,value) {
+        if (!value.hasChildNodes()) {
+            value.remove();
+        }
+    });
+
+    // your function code here
+
+    setTimeout(delete_empty_containers, 8000);
+}
+
+delete_empty_containers();
+
+
+
+// collect audio data
+
+var SpeakerDetection = function(publisher, startTalking, stopTalking) {
+  var activity = null;
+  publisher.on('audioLevelUpdated', function(event) {
+    var now = Date.now();
+    if (event.audioLevel > 0.2) {
+      if (!activity) {
+        activity = {timestamp: now, talking: false};
+      } else if (activity.talking) {
+        activity.timestamp = now;
+      } else if (now- activity.timestamp > 1000) {
+        // detected audio activity for more than 1s
+        // for the first time.
+        activity.talking = true;
+        if (typeof(startTalking) === 'function') {
+          startTalking();
+        }
+      }
+    } else if (activity && now - activity.timestamp > 3000) {
+      // detected low audio activity for more than 3s
+      if (activity.talking) {
+        if (typeof(stopTalking) === 'function') {
+          stopTalking();
+        }
+      }
+      activity = null;
+    }
+  });
+};
+
+
+SpeakerDetection(publisher, function() {
+  console.log('started talking');
+  liveSend({'type': 'start_stop_talking', 'value': 'start_talking', 'time': + new Date(),"otree_user_session_id":"{{ otree_user_session_id }}","otree_session_id":"{{ otree_session_id }}"});
+
+}, function() {
+  console.log('stopped talking');
+  liveSend({'type': 'start_stop_talking', 'value': 'stop_talking', 'time': + new Date(),"otree_user_session_id":"{{ otree_user_session_id }}","otree_session_id":"{{ otree_session_id }}"});
+});
+
+
+var now = + new Date();
+publisher.on('audioLevelUpdated', function(event) {
+    if (Date.now()-now >500) {
+        console.log(event.audioLevel);
+
+        liveSend({'type': 'noise_level', 'value': event.audioLevel, 'time': + new Date(),"otree_user_session_id":"{{ otree_user_session_id }}","otree_session_id":"{{ otree_session_id }}"});
+        console.log(Date.now());
+        now = + new Date();
+    }
+});
+
+
+
+
+
+</script>
+
+
+
+
+{% endblock %}
+
+
